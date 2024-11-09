@@ -295,10 +295,7 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 	UASSERT(res.collides);
 	UASSERT(res.touching_ground);
 	UASSERT(!res.standing_on_object);
-	// Current collision code uses linear collision, which incorrectly yields a collision at 0.741 here
-	// but usually this resolves itself in the next dtime, fortunately.
-	// Parabolic collision should correctly find this in one step.
-	// UASSERTEQ_V3F(pos, fpos(0, 0.5f, 0));
+	UASSERTEQ_V3F(pos, fpos(0, 0.5f, 0));
 	UASSERTEQ_V3F(speed, fpos(0, 0, 0));
 	UASSERT(res.collisions.size() == 1);
 	{
@@ -334,21 +331,21 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 
 	/* moving over ground, no gravity */
 	pos   = fpos(0, 0.5f, 0);
-	speed = fpos(1.0f, 0.0f, 0);
+	speed = fpos(-1.6f, 0, -1.7f);
 	accel = fpos(0, 0.0f, 0);
 	res = collisionMoveSimple(env.get(), gamedef, box, 0.0f, 1.0f,
 		&pos, &speed, accel);
 
 	UASSERT(!res.collides);
-	UASSERT(res.touching_ground);
+	// UASSERT(res.touching_ground); // no gravity, so not guaranteed
 	UASSERT(!res.standing_on_object);
-	UASSERTEQ_V3F(pos, fpos(1.0f, 0.5f, 0));
-	UASSERTEQ_V3F(speed, fpos(1.0f, 0, 0));
+	UASSERTEQ_V3F(pos, fpos(-1.6f, 0.5f, -1.7f));
+	UASSERTEQ_V3F(speed, fpos(-1.6f, 0, -1.7f));
 	UASSERT(res.collisions.empty());
 
 	/* moving over ground, with gravity */
-	pos   = fpos(0, 0.5f, 0);
-	speed = fpos(1.0f, 0.0f, 0);
+	pos   = fpos(5.5f, 0.5f, 5.5f);
+	speed = fpos(-1.0f, 0.0f, -0.1f);
 	accel = fpos(0, -9.81f, 0);
 	res = collisionMoveSimple(env.get(), gamedef, box, 0.0f, 1.0f,
 		&pos, &speed, accel);
@@ -356,14 +353,14 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 	UASSERT(res.collides);
 	UASSERT(res.touching_ground);
 	UASSERT(!res.standing_on_object);
-	UASSERTEQ_V3F(pos, fpos(1.0f, 0.5f, 0));
-	UASSERTEQ_V3F(speed, fpos(1.0f, 0, 0));
+	UASSERTEQ_V3F(pos, fpos(4.5f, 0.5f, 5.4f));
+	UASSERTEQ_V3F(speed, fpos(-1.0f, 0, -0.1f));
 	UASSERT(res.collisions.size() == 1);
 	{ // first collision on y axis zeros speed and acceleration.
 		auto &ci = res.collisions.front();
 		UASSERTEQ(int, ci.type, COLLISION_NODE);
 		UASSERTEQ(int, ci.axis, COLLISION_AXIS_Y);
-		UASSERTEQ(v3s16, ci.node_p, v3s16(0, 0, 0));
+		UASSERTEQ(v3s16, ci.node_p, v3s16(5, 0, 5));
 	}
 
 	/* not moving never collides */
