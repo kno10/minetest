@@ -76,7 +76,7 @@ bool collision_check_intersection(Environment *env, IGameDef *gamedef,
 // dtime receives time until first collision, invalid if -1 is returned
 CollisionAxis axisAlignedCollision(
 		const aabb3f &staticbox, const aabb3f &movingbox,
-		v3f speed, f32 *dtime);
+		v3f speed, v3f accel, f32 *dtime);
 
 // Helper function:
 // Checks if moving the movingbox up by the given distance would hit a ceiling.

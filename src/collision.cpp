@@ -80,6 +80,34 @@ inline v3f rangelimv(const v3f vec, const f32 low, const f32 high)
 		rangelim(vec.Z, low, high)
 	);
 }
+
+const f32 NO_COLLISION_TIME = std::numeric_limits<f32>::infinity();
+
+// Time to collision in a one dimensional setting, with acceleration.
+// We have `pos = vel * dtime + 0.5 * acc * dtime²`.
+// This yields `dtime = (-vel ± sqrt(vel² + 2 * acc * pos)) / acc`
+inline f32 time_to_collision_1d(f32 pos, f32 vel, f32 acc) {
+	if (pos == 0.f)
+		return 0.f;
+	// Base case, dtime = pos / vel, if in the same direction
+	if (acc == 0.f)
+		return pos * vel > 0.f ? pos / vel : NO_COLLISION_TIME;
+	// use f64 because of squared values to avoid catastrophic cancelation
+	f64 sq = vel * (f64) vel + 2. * acc * pos;
+	if (sq < 0.0 && sq > -1e-6)
+		sq = 0.0; // allow some rounding error
+	if (sq < 0.0)
+		return NO_COLLISION_TIME;
+	f32 sqrt = (f32) std::sqrt(sq); // back to original precision
+	// beware: both vel and acc may be negative here
+	f32 sol_a = (-vel + sqrt) / acc;
+	f32 sol_b = (-vel - sqrt) / acc;
+	if (sol_a >= 0.f && (sol_b < 0.f || sol_a <= sol_b))
+		return sol_a;
+	if (sol_b >= 0.f && (sol_a < 0.f || sol_b <= sol_a))
+		return sol_b;
+	return NO_COLLISION_TIME;
+}
 }
 
 // Helper function:
@@ -88,101 +116,91 @@ inline v3f rangelimv(const v3f vec, const f32 low, const f32 high)
 // The time after which the collision occurs is stored in dtime.
 CollisionAxis axisAlignedCollision(
 		const aabb3f &staticbox, const aabb3f &movingbox,
-		const v3f speed, f32 *dtime)
+		const v3f speed, const v3f accel, f32 *dtime)
 {
 	//TimeTaker tt("axisAlignedCollision");
 
-	aabb3f relbox(
-			(movingbox.MaxEdge.X - movingbox.MinEdge.X) + (staticbox.MaxEdge.X - staticbox.MinEdge.X),						// sum of the widths
-			(movingbox.MaxEdge.Y - movingbox.MinEdge.Y) + (staticbox.MaxEdge.Y - staticbox.MinEdge.Y),
-			(movingbox.MaxEdge.Z - movingbox.MinEdge.Z) + (staticbox.MaxEdge.Z - staticbox.MinEdge.Z),
-			std::max(movingbox.MaxEdge.X, staticbox.MaxEdge.X) - std::min(movingbox.MinEdge.X, staticbox.MinEdge.X),	//outer bounding 'box' dimensions
-			std::max(movingbox.MaxEdge.Y, staticbox.MaxEdge.Y) - std::min(movingbox.MinEdge.Y, staticbox.MinEdge.Y),
-			std::max(movingbox.MaxEdge.Z, staticbox.MaxEdge.Z) - std::min(movingbox.MinEdge.Z, staticbox.MinEdge.Z)
-	);
-
-	const f32 dtime_max = *dtime;
-	f32 inner_margin;		// the distance of clipping recovery
-	f32 distance;
-	f32 time;
-
-
-	if (speed.Y) {
-		distance = relbox.MaxEdge.Y - relbox.MinEdge.Y;
-		// FIXME: The dtime calculation is inaccurate without acceleration information.
-		// Exact formula: `dtime = (-vel ± sqrt(vel² + 2 * acc * distance)) / acc`
-		*dtime = distance / std::abs(speed.Y);
-		time = std::max(*dtime, 0.0f);
-
-		if (*dtime <= dtime_max) {
-			inner_margin = std::max(-0.5f * (staticbox.MaxEdge.Y - staticbox.MinEdge.Y), -2.0f);
-
-			if ((speed.Y > 0 && staticbox.MinEdge.Y - movingbox.MaxEdge.Y > inner_margin) ||
-				(speed.Y < 0 && movingbox.MinEdge.Y - staticbox.MaxEdge.Y > inner_margin)) {
-				if (
-					(std::max(movingbox.MaxEdge.X + speed.X * time, staticbox.MaxEdge.X)
-						- std::min(movingbox.MinEdge.X + speed.X * time, staticbox.MinEdge.X)
-						- relbox.MinEdge.X < 0) &&
-						(std::max(movingbox.MaxEdge.Z + speed.Z * time, staticbox.MaxEdge.Z)
-							- std::min(movingbox.MinEdge.Z + speed.Z * time, staticbox.MinEdge.Z)
-							- relbox.MinEdge.Z < 0)
-					)
-					return COLLISION_AXIS_Y;
-			}
+	if (speed.Y || accel.Y) {
+		f32 time = NO_COLLISION_TIME;
+		if (movingbox.MaxEdge.Y < staticbox.MinEdge.Y) {
+			time = time_to_collision_1d(staticbox.MinEdge.Y - movingbox.MaxEdge.Y, speed.Y, accel.Y);
 		}
-		else {
-			return COLLISION_AXIS_NONE;
+		else if (movingbox.MinEdge.Y > staticbox.MaxEdge.Y) {
+			time = time_to_collision_1d(staticbox.MaxEdge.Y - movingbox.MinEdge.Y, speed.Y, accel.Y);
+		}
+		// overlapping, allow to separate:
+		else if (speed.Y > 0.f || (speed.Y == 0.f && accel.Y > 0.f)) {
+			time = time_to_collision_1d(staticbox.MinEdge.Y - movingbox.MaxEdge.Y, speed.Y, accel.Y);
+		}
+		else if (speed.Y < 0.f || (speed.Y == 0.f && accel.Y < 0.f)) {
+			time = time_to_collision_1d(staticbox.MaxEdge.Y - movingbox.MinEdge.Y, speed.Y, accel.Y);
+		}
+		if (time != NO_COLLISION_TIME && time <= *dtime) {
+			v3f aspeed = speed + 0.5 * accel * time;
+			if (movingbox.MaxEdge.X + aspeed.X * time > staticbox.MinEdge.X &&
+			    movingbox.MinEdge.X + aspeed.X * time < staticbox.MaxEdge.X &&
+			    movingbox.MaxEdge.Z + aspeed.Z * time > staticbox.MinEdge.Z &&
+			    movingbox.MinEdge.Z + aspeed.Z * time < staticbox.MaxEdge.Z) {
+				*dtime = time;
+				return COLLISION_AXIS_Y;
+			}
 		}
 	}
 
 	// NO else if here
 
-	if (speed.X) {
-		distance = relbox.MaxEdge.X - relbox.MinEdge.X;
-		*dtime = distance / std::abs(speed.X);
-		time = std::max(*dtime, 0.0f);
-
-		if (*dtime <= dtime_max) {
-			inner_margin = std::max(-0.5f * (staticbox.MaxEdge.X - staticbox.MinEdge.X), -2.0f);
-
-			if ((speed.X > 0 && staticbox.MinEdge.X - movingbox.MaxEdge.X > inner_margin) ||
-				(speed.X < 0 && movingbox.MinEdge.X - staticbox.MaxEdge.X > inner_margin)) {
-				if (
-					(std::max(movingbox.MaxEdge.Y + speed.Y * time, staticbox.MaxEdge.Y)
-						- std::min(movingbox.MinEdge.Y + speed.Y * time, staticbox.MinEdge.Y)
-						- relbox.MinEdge.Y < 0) &&
-						(std::max(movingbox.MaxEdge.Z + speed.Z * time, staticbox.MaxEdge.Z)
-							- std::min(movingbox.MinEdge.Z + speed.Z * time, staticbox.MinEdge.Z)
-							- relbox.MinEdge.Z < 0)
-					)
-					return COLLISION_AXIS_X;
+	if (speed.X || accel.X) {
+		f32 time = NO_COLLISION_TIME;
+		if (movingbox.MaxEdge.X < staticbox.MinEdge.X) {
+			time = time_to_collision_1d(staticbox.MinEdge.X - movingbox.MaxEdge.X, speed.X, accel.X);
+		}
+		else if (movingbox.MinEdge.X > staticbox.MaxEdge.X) {
+			time = time_to_collision_1d(staticbox.MaxEdge.X - movingbox.MinEdge.X, speed.X, accel.X);
+		}
+		// overlapping, allow to separate:
+		else if (speed.X > 0.f || (speed.X == 0.f && accel.X > 0.f)) {
+			time = time_to_collision_1d(staticbox.MinEdge.X - movingbox.MaxEdge.X, speed.X, accel.X);
+		}
+		else if (speed.X < 0.f || (speed.X == 0.f && accel.X < 0.f)) {
+			time = time_to_collision_1d(staticbox.MaxEdge.X - movingbox.MinEdge.X, speed.X, accel.X);
+		}
+		if (time != NO_COLLISION_TIME && time <= *dtime) {
+			v3f aspeed = speed + 0.5 * accel * time;
+			if (movingbox.MaxEdge.Y + aspeed.Y * time > staticbox.MinEdge.Y &&
+			    movingbox.MinEdge.Y + aspeed.Y * time < staticbox.MaxEdge.Y &&
+			    movingbox.MaxEdge.Z + aspeed.Z * time > staticbox.MinEdge.Z &&
+			    movingbox.MinEdge.Z + aspeed.Z * time < staticbox.MaxEdge.Z) {
+				*dtime = time;
+				return COLLISION_AXIS_X;
 			}
-		} else {
-			return COLLISION_AXIS_NONE;
 		}
 	}
 
 	// NO else if here
 
-	if (speed.Z) {
-		distance = relbox.MaxEdge.Z - relbox.MinEdge.Z;
-		*dtime = distance / std::abs(speed.Z);
-		time = std::max(*dtime, 0.0f);
-
-		if (*dtime <= dtime_max) {
-			inner_margin = std::max(-0.5f * (staticbox.MaxEdge.Z - staticbox.MinEdge.Z), -2.0f);
-
-			if ((speed.Z > 0 && staticbox.MinEdge.Z - movingbox.MaxEdge.Z > inner_margin) ||
-				(speed.Z < 0 && movingbox.MinEdge.Z - staticbox.MaxEdge.Z > inner_margin)) {
-				if (
-					(std::max(movingbox.MaxEdge.X + speed.X * time, staticbox.MaxEdge.X)
-						- std::min(movingbox.MinEdge.X + speed.X * time, staticbox.MinEdge.X)
-						- relbox.MinEdge.X < 0) &&
-						(std::max(movingbox.MaxEdge.Y + speed.Y * time, staticbox.MaxEdge.Y)
-							- std::min(movingbox.MinEdge.Y + speed.Y * time, staticbox.MinEdge.Y)
-							- relbox.MinEdge.Y < 0)
-					)
-					return COLLISION_AXIS_Z;
+	if (speed.Z || accel.Z) {
+		f32 time = NO_COLLISION_TIME;
+		if (movingbox.MaxEdge.Z < staticbox.MinEdge.Z) {
+			time = time_to_collision_1d(staticbox.MinEdge.Z - movingbox.MaxEdge.Z, speed.Z, accel.Z);
+		}
+		else if (movingbox.MinEdge.Z > staticbox.MaxEdge.Z) {
+			time = time_to_collision_1d(staticbox.MaxEdge.Z - movingbox.MinEdge.Z, speed.Z, accel.Z);
+		}
+		// overlapping, allow to separate:
+		else if (speed.Z > 0.f || (speed.Z == 0.f && accel.Z > 0.f)) {
+			time = time_to_collision_1d(staticbox.MinEdge.Z - movingbox.MaxEdge.Z, speed.Z, accel.Z);
+		}
+		else if (speed.Z < 0.f || (speed.Z == 0.f && accel.Z < 0.f)) {
+			time = time_to_collision_1d(staticbox.MaxEdge.Z - movingbox.MinEdge.Z, speed.Z, accel.Z);
+		}
+		if (time != NO_COLLISION_TIME && time <= *dtime) {
+			v3f aspeed = speed + 0.5 * accel * time;
+			if (movingbox.MaxEdge.X + aspeed.X * time > staticbox.MinEdge.X &&
+			    movingbox.MinEdge.X + aspeed.X * time < staticbox.MaxEdge.X &&
+			    movingbox.MaxEdge.Y + aspeed.Y * time > staticbox.MinEdge.Y &&
+			    movingbox.MinEdge.Y + aspeed.Y * time < staticbox.MaxEdge.Y) {
+				*dtime = time;
+				return COLLISION_AXIS_Z;
 			}
 		}
 	}
@@ -434,7 +452,7 @@ collisionMoveResult collisionMoveSimple(Environment *env, IGameDef *gamedef,
 			// Find nearest collision of the two boxes (raytracing-like)
 			f32 dtime_tmp = nearest_dtime;
 			CollisionAxis collided = axisAlignedCollision(box_info.box,
-					movingbox, aspeed_f, &dtime_tmp);
+					movingbox, *speed_f, accel_f, &dtime_tmp);
 			if (collided == -1 || dtime_tmp >= nearest_dtime)
 				continue;
 
@@ -520,10 +538,8 @@ collisionMoveResult collisionMoveSimple(Environment *env, IGameDef *gamedef,
 			if (bounce < -1e-4 && fabsf(speed_f->Y) > BS * 3) {
 				speed_f->Y *= bounce;
 			} else {
-				if (speed_f->Y < 0.0f) {
-					// FIXME: This code is necessary until `axisAlignedCollision` takes acceleration
-					// into consideration for the time calculation. Otherwise, the colliding faces
-					// never line up, especially at high step (dtime) intervals.
+				if (speed_f->Y < 0.0f || (speed_f->Y == 0.f && accel_f.Y < 0)) {
+					// Down collision
 					result.touching_ground = true;
 					result.standing_on_object = nearest_info.isObject();
 				}
