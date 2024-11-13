@@ -135,6 +135,7 @@ void TestCollision::testAxisAlignedCollision()
 			aabb3f s(bx, by, bz, bx+1, by+1, bz+1);
 			aabb3f m(bx+2, by-1.5, bz, bx+2.5, by-0.5, bz+1);
 			v3f v(-0.5, 0.2, 0); // 0.200000003 precisely
+			v3f a(0., 0., 0.);
 			f32 dtime = 2.51f;
 			UASSERT(axisAlignedCollision(s, m, v, &dtime) == 1);  // Y, not X!
 			UASSERT(fabs(dtime - 2.500) < 0.001);
@@ -143,6 +144,7 @@ void TestCollision::testAxisAlignedCollision()
 			aabb3f s(bx, by, bz, bx+1, by+1, bz+1);
 			aabb3f m(bx+2, by-1.5, bz, bx+2.5, by-0.5, bz+1);
 			v3f v(-0.5, 0.3, 0); // 0.300000012 precisely
+			v3f a(0., 0., 0.);
 			f32 dtime = 2.1f;
 			UASSERT(axisAlignedCollision(s, m, v, &dtime) == 0);
 			UASSERT(fabs(dtime - 2.000) < 0.001);
@@ -179,6 +181,7 @@ void TestCollision::testAxisAlignedCollision()
 			aabb3f s(bx, by, bz, bx+2, by+2, bz+2);
 			aabb3f m(bx-4.2, by-4.2, bz-4.2, bx-2.3, by-2.29, bz-2.29);
 			v3f v(1./7, 1./7, 1./7);
+			v3f a(0., 0., 0.);
 			f32 dtime = 17.1f;
 			UASSERT(axisAlignedCollision(s, m, v, &dtime) == 0);
 			UASSERT(fabs(dtime - 16.1) < 0.001);
@@ -306,10 +309,7 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 	UASSERT(res.collides);
 	UASSERT(res.touching_ground);
 	UASSERT(!res.standing_on_object);
-	// Current collision code uses linear collision, which incorrectly yields a collision at 0.672 here
-	// but usually this resolves itself in the next dtime, fortunately.
-	// Parabolic collision should correctly find this in one step.
-	// UASSERTEQ_V3F(pos, fpos(0, 0.5f, 0));
+	UASSERTEQ_V3F(pos, fpos(0, 0.5f, 0));
 	UASSERTEQ_V3F(speed, fpos(0, 0, 0));
 	UASSERT(res.collisions.size() == 1);
 	{
@@ -321,21 +321,21 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 
 	/* moving over ground, no gravity */
 	pos   = fpos(0, 0.5f, 0);
-	speed = fpos(-1.6f, 0, -1.7f);
+	speed = fpos(1.0f, 0.0f, 0);
 	accel = fpos(0, 0.0f, 0);
 	res = collisionMoveSimple(env.get(), gamedef, box, 0.0f, 1.0f,
 		&pos, &speed, accel);
 
 	UASSERT(!res.collides);
-	// UASSERT(res.touching_ground); // no gravity, so not guaranteed
+	UASSERT(res.touching_ground);
 	UASSERT(!res.standing_on_object);
-	UASSERTEQ_V3F(pos, fpos(-1.6f, 0.5f, -1.7f));
-	UASSERTEQ_V3F(speed, fpos(-1.6f, 0, -1.7f));
+	UASSERTEQ_V3F(pos, fpos(1.0f, 0.5f, 0));
+	UASSERTEQ_V3F(speed, fpos(1.0f, 0, 0));
 	UASSERT(res.collisions.empty());
 
 	/* moving over ground, with gravity */
-	pos   = fpos(5.5f, 0.5f, 5.5f);
-	speed = fpos(-1.0f, 0.0f, -0.1f);
+	pos   = fpos(0, 0.5f, 0);
+	speed = fpos(1.0f, 0.0f, 0);
 	accel = fpos(0, -9.81f, 0);
 	res = collisionMoveSimple(env.get(), gamedef, box, 0.0f, 1.0f,
 		&pos, &speed, accel);
@@ -343,14 +343,14 @@ void TestCollision::testCollisionMoveSimple(IGameDef *gamedef)
 	UASSERT(res.collides);
 	UASSERT(res.touching_ground);
 	UASSERT(!res.standing_on_object);
-	UASSERTEQ_V3F(pos, fpos(4.5f, 0.5f, 5.4f));
-	UASSERTEQ_V3F(speed, fpos(-1.0f, 0, -0.1f));
+	UASSERTEQ_V3F(pos, fpos(1.0f, 0.5f, 0));
+	UASSERTEQ_V3F(speed, fpos(1.0f, 0, 0));
 	UASSERT(res.collisions.size() == 1);
 	{ // first collision on y axis zeros speed and acceleration.
 		auto &ci = res.collisions.front();
 		UASSERTEQ(int, ci.type, COLLISION_NODE);
 		UASSERTEQ(int, ci.axis, COLLISION_AXIS_Y);
-		UASSERTEQ(v3s16, ci.node_p, v3s16(5, 0, 5));
+		UASSERTEQ(v3s16, ci.node_p, v3s16(0, 0, 0));
 	}
 
 	/* not moving never collides */
