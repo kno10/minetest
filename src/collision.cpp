@@ -87,15 +87,20 @@ const f32 NO_COLLISION_TIME = std::numeric_limits<f32>::infinity();
 // We have `pos = vel * dtime + 0.5 * acc * dtime²`.
 // This yields `dtime = (-vel ± sqrt(vel² + 2 * acc * pos)) / acc`
 inline f32 time_to_collision_1d(f32 pos, f32 vel, f32 acc) {
-	if (pos == 0.f)
-		return 0.f;
 	// Base case, dtime = pos / vel, if in the same direction
 	if (acc == 0.f)
 		return pos * vel > 0.f ? pos / vel : NO_COLLISION_TIME;
+	// Potentially instant, but the signs matter
+	if (pos == 0.f) {
+		// we have (-vel ± |vel|) / acc, i.e., 0 and -2vel/acc
+		if (vel > 0.f || (vel == 0.f && acc > 0.f))
+			return 0.0f;
+		return (vel < 0.f && acc < 0.f) ? -2 * vel / acc : NO_COLLISION_TIME;
+	}
 	// use f64 because of squared values to avoid catastrophic cancelation
 	f64 sq = vel * (f64) vel + 2. * acc * pos;
-	if (sq < 0.0 && sq > -1e-6)
-		sq = 0.0; // allow some rounding error
+	if (sq <= 1e-6 && sq > -1e-6) // allow some rounding, but square term is essentially zero
+		return -vel / acc;
 	if (sq < 0.0)
 		return NO_COLLISION_TIME;
 	f32 sqrt = (f32) std::sqrt(sq); // back to original precision
@@ -122,18 +127,26 @@ CollisionAxis axisAlignedCollision(
 
 	if (speed.Y || accel.Y) {
 		f32 time = NO_COLLISION_TIME;
-		if (movingbox.MaxEdge.Y < staticbox.MinEdge.Y) {
+		if (movingbox.MaxEdge.Y <= staticbox.MinEdge.Y) {
 			time = time_to_collision_1d(staticbox.MinEdge.Y - movingbox.MaxEdge.Y, speed.Y, accel.Y);
 		}
-		else if (movingbox.MinEdge.Y > staticbox.MaxEdge.Y) {
-			time = time_to_collision_1d(staticbox.MaxEdge.Y - movingbox.MinEdge.Y, speed.Y, accel.Y);
+		else if (movingbox.MinEdge.Y >= staticbox.MaxEdge.Y) {
+			time = time_to_collision_1d(movingbox.MinEdge.Y - staticbox.MaxEdge.Y, -speed.Y, -accel.Y);
 		}
-		// overlapping, allow to separate:
-		else if (speed.Y > 0.f || (speed.Y == 0.f && accel.Y > 0.f)) {
-			time = time_to_collision_1d(staticbox.MinEdge.Y - movingbox.MaxEdge.Y, speed.Y, accel.Y);
-		}
-		else if (speed.Y < 0.f || (speed.Y == 0.f && accel.Y < 0.f)) {
-			time = time_to_collision_1d(staticbox.MaxEdge.Y - movingbox.MinEdge.Y, speed.Y, accel.Y);
+		else {
+			// already overlapping: collide if the overlap increases
+			if ((speed.Y > 0.f || (speed.Y == 0.f && accel.Y > 0.f))
+			    && movingbox.MinEdge.Y < staticbox.MinEdge.Y && movingbox.MaxEdge.Y < staticbox.MaxEdge.Y) {
+				f32 tmp = time_to_collision_1d(movingbox.MaxEdge.Y - staticbox.MinEdge.Y, speed.Y, accel.Y);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
+			if ((speed.Y < 0.f || (speed.Y == 0.f && accel.Y < 0.f))
+			    && movingbox.MinEdge.Y > staticbox.MinEdge.Y && movingbox.MaxEdge.Y > staticbox.MaxEdge.Y) {
+				f32 tmp = time_to_collision_1d(staticbox.MaxEdge.Y - movingbox.MinEdge.Y, -speed.Y, -accel.Y);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
 		}
 		if (time != NO_COLLISION_TIME && time <= *dtime) {
 			v3f aspeed = speed + 0.5 * accel * time;
@@ -151,18 +164,26 @@ CollisionAxis axisAlignedCollision(
 
 	if (speed.X || accel.X) {
 		f32 time = NO_COLLISION_TIME;
-		if (movingbox.MaxEdge.X < staticbox.MinEdge.X) {
+		if (movingbox.MaxEdge.X <= staticbox.MinEdge.X) {
 			time = time_to_collision_1d(staticbox.MinEdge.X - movingbox.MaxEdge.X, speed.X, accel.X);
 		}
-		else if (movingbox.MinEdge.X > staticbox.MaxEdge.X) {
-			time = time_to_collision_1d(staticbox.MaxEdge.X - movingbox.MinEdge.X, speed.X, accel.X);
+		else if (movingbox.MinEdge.X >= staticbox.MaxEdge.X) {
+			time = time_to_collision_1d(movingbox.MinEdge.X - staticbox.MaxEdge.X, -speed.X, -accel.X);
 		}
-		// overlapping, allow to separate:
-		else if (speed.X > 0.f || (speed.X == 0.f && accel.X > 0.f)) {
-			time = time_to_collision_1d(staticbox.MinEdge.X - movingbox.MaxEdge.X, speed.X, accel.X);
-		}
-		else if (speed.X < 0.f || (speed.X == 0.f && accel.X < 0.f)) {
-			time = time_to_collision_1d(staticbox.MaxEdge.X - movingbox.MinEdge.X, speed.X, accel.X);
+		else {
+			// already overlapping: collide if the overlap increases
+			if ((speed.X > 0.f || (speed.X == 0.f && accel.X > 0.f))
+			    && movingbox.MinEdge.X < staticbox.MinEdge.X && movingbox.MaxEdge.X < staticbox.MaxEdge.X) {
+				f32 tmp = time_to_collision_1d(movingbox.MaxEdge.X - staticbox.MinEdge.X, speed.X, accel.X);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
+			if ((speed.X < 0.f || (speed.X == 0.f && accel.X < 0.f))
+			    && movingbox.MinEdge.X > staticbox.MinEdge.X && movingbox.MaxEdge.X > staticbox.MaxEdge.X) {
+				f32 tmp = time_to_collision_1d(staticbox.MaxEdge.X - movingbox.MinEdge.X, -speed.X, -accel.X);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
 		}
 		if (time != NO_COLLISION_TIME && time <= *dtime) {
 			v3f aspeed = speed + 0.5 * accel * time;
@@ -180,18 +201,26 @@ CollisionAxis axisAlignedCollision(
 
 	if (speed.Z || accel.Z) {
 		f32 time = NO_COLLISION_TIME;
-		if (movingbox.MaxEdge.Z < staticbox.MinEdge.Z) {
+		if (movingbox.MaxEdge.Z <= staticbox.MinEdge.Z) {
 			time = time_to_collision_1d(staticbox.MinEdge.Z - movingbox.MaxEdge.Z, speed.Z, accel.Z);
 		}
-		else if (movingbox.MinEdge.Z > staticbox.MaxEdge.Z) {
-			time = time_to_collision_1d(staticbox.MaxEdge.Z - movingbox.MinEdge.Z, speed.Z, accel.Z);
+		else if (movingbox.MinEdge.Z >= staticbox.MaxEdge.Z) {
+			time = time_to_collision_1d(movingbox.MinEdge.Z - staticbox.MaxEdge.Z, -speed.Z, -accel.Z);
 		}
-		// overlapping, allow to separate:
-		else if (speed.Z > 0.f || (speed.Z == 0.f && accel.Z > 0.f)) {
-			time = time_to_collision_1d(staticbox.MinEdge.Z - movingbox.MaxEdge.Z, speed.Z, accel.Z);
-		}
-		else if (speed.Z < 0.f || (speed.Z == 0.f && accel.Z < 0.f)) {
-			time = time_to_collision_1d(staticbox.MaxEdge.Z - movingbox.MinEdge.Z, speed.Z, accel.Z);
+		else {
+			// already overlapping: collide if the overlap increases
+			if ((speed.Z > 0.f || (speed.Z == 0.f && accel.Z > 0.f))
+			    && movingbox.MinEdge.Z < staticbox.MinEdge.Z && movingbox.MaxEdge.Z < staticbox.MaxEdge.Z) {
+				f32 tmp = time_to_collision_1d(movingbox.MaxEdge.Z - staticbox.MinEdge.Z, speed.Z, accel.Z);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
+			if ((speed.Z < 0.f || (speed.Z == 0.f && accel.Z < 0.f))
+			    && movingbox.MinEdge.Z > staticbox.MinEdge.Z && movingbox.MaxEdge.Z > staticbox.MaxEdge.Z) {
+				f32 tmp = time_to_collision_1d(staticbox.MaxEdge.Z - movingbox.MinEdge.Z, -speed.Z, -accel.Z);
+				if (tmp != NO_COLLISION_TIME)
+					time = -tmp;
+			}
 		}
 		if (time != NO_COLLISION_TIME && time <= *dtime) {
 			v3f aspeed = speed + 0.5 * accel * time;
@@ -503,12 +532,20 @@ collisionMoveResult collisionMoveSimple(Environment *env, IGameDef *gamedef,
 			// This largely means an "instant" collision, e.g., with the floor.
 			// We use aspeed and nearest_dtime to be consistent with above and resolve this collision
 			if (!step_up) {
-				if (nearest_collided == COLLISION_AXIS_X)
+				// updated average speed for the sub-interval up to nearest_dtime
+				aspeed_f = *speed_f + accel_f * -0.5f * nearest_dtime;
+				if (nearest_collided == COLLISION_AXIS_X) {
 					pos_f->X += aspeed_f.X * nearest_dtime;
-				if (nearest_collided == COLLISION_AXIS_Y)
+					accel_f.X = 0;
+				}
+				if (nearest_collided == COLLISION_AXIS_Y) {
 					pos_f->Y += aspeed_f.Y * nearest_dtime;
-				if (nearest_collided == COLLISION_AXIS_Z)
+					accel_f.Y = 0;
+				}
+				if (nearest_collided == COLLISION_AXIS_Z) {
 					pos_f->Z += aspeed_f.Z * nearest_dtime;
+					accel_f.Z = 0;
+				}
 			}
 		} else if (nearest_dtime > 0) {
 			// updated average speed for the sub-interval up to nearest_dtime
