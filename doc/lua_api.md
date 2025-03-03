@@ -5691,6 +5691,8 @@ Utilities
       particle_blend_clip = true,
       -- The `match_meta` optional parameter is available for `InvRef:remove_item()` (5.12.0)
       remove_item_match_meta = true,
+      -- biomes have centrality and z point parameters (5.xy.0)
+      biome_centrality = true,
   }
   ```
 
@@ -10715,6 +10717,17 @@ The maximum number of biomes that can be used is 65535. However, using an
 excessive number of biomes will slow down map generation. Depending on desired
 performance and computing power the practical limit is much lower.
 
+Because mapgens such as valley modify temperature and humidity, the biome
+assignment in-game may differ slightly from map generation time. But in
+principle, each point is assigned the nearest biome, where nearness
+is computed using `sqrt(heat_diff^2 + temp_diff^2) / weight^2`.
+If the centrality or z points are used, the full equation becomes
+`(sqrt(heat_diff^2 + temp_diff^2) + cent_diff * cent_weight +
+north_diff * north_weight) / weight^2`.
+The weightings are necessary because the different factors have different
+scales: heat and temperature are mostly in 0 to 100 (but not limited to this
+range), while the coordinates range from -32768 to +32767.
+
 ```lua
 {
     name = "tundra",
@@ -10801,6 +10814,17 @@ performance and computing power the practical limit is much lower.
     weight = 1.0,
     -- Relative weight of the biome in the Voronoi diagram.
     -- A value of 0 (or less) is ignored and equivalent to 1.0.
+
+    centrality_point = 0,
+    centrality_weight = 0,
+    -- Preferred distance from the world origin for the biome.
+    -- Weight to control how much centrality influences the biome choice.
+
+    z_point = 0,
+    z_weight = 0,
+    -- Preferred z value of the biome, to define pole and equator biomes.
+    -- Weight to balance with other factors. This is a soft condition,
+    -- for a strict limitation use min_pos and max_pos instead.
 }
 ```
 

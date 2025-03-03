@@ -248,9 +248,19 @@ Biome *BiomeGenOriginal::calcBiomeFromNoise(float heat, float humidity, v3s16 po
 
 		float d_heat = heat - b->heat_point;
 		float d_humidity = humidity - b->humidity_point;
-		float dist = ((d_heat * d_heat) + (d_humidity * d_humidity));
-		if (b->weight > 0.f)
-		       dist /= b->weight;
+		float dist = fsqrt(d_heat * d_heat + d_humidity * d_humidity);
+		if (b->centrality_weight > 0.f) {
+			float d_centrality = fsqrt(pos.X * pos.X + pos.Y * pos.Y + pos.Z * pos.Z) - b->centrality_point;
+			dist += d_centrality * b->centrality_weight;
+		}
+		if (b->z_weight > 0.f) {
+			float d_z = fabs(pos.Z - b->z_point);
+			dist += d_z * b->z_weight;
+		}
+		// Overall biome weight to control rarity
+		// Note: weight_mult = 1/(weight*weight) from the biome definition now.
+		if (b->weight_mult > 0.f && b->weight_mult != 1.f)
+		       dist *= b->weight_mult;
 
 		if (pos.Y <= b->max_pos.Y) { // Within y limits of biome b
 			if (dist < dist_min) {
@@ -313,7 +323,11 @@ ObjDef *Biome::clone() const
 	obj->heat_point = heat_point;
 	obj->humidity_point = humidity_point;
 	obj->vertical_blend = vertical_blend;
-	obj->weight = weight;
+	obj->weight_mult = weight_mult;
+	obj->centrality_point = centrality_point;
+	obj->centrality_weight = centrality_weight;
+	obj->z_point = z_point;
+	obj->z_weight = z_weight;
 
 	return obj;
 }

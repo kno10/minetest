@@ -60,7 +60,11 @@ public:
 	float heat_point     = 0.0f;
 	float humidity_point = 0.0f;
 	s16 vertical_blend = 0;
-	float weight = 1.0f;
+	float weight_mult = 1.0f;
+	float centrality_point = 0.0f;
+	float centrality_weight = 0.0f;
+	float z_point = 0.0f;
+	float z_weight = 0.0f;
 
 	virtual void resolveNodeNames();
 };

@@ -44,6 +44,7 @@ core.features = {
 	bulk_lbms = true,
 	abm_without_neighbors = true,
 	biome_weights = true,
+	biome_centrality = true,
 	particle_blend_clip = true,
 	remove_item_match_meta = true,
 }

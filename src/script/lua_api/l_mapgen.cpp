@@ -374,7 +374,15 @@ Biome *read_biome_def(lua_State *L, int index, const NodeDefManager *ndef)
 	getfloatfield(L,  index, "heat_point",      b->heat_point);
 	getfloatfield(L,  index, "humidity_point",  b->humidity_point);
 	getintfield(L,    index, "vertical_blend",  b->vertical_blend);
-	getfloatfield(L,  index, "weight",          b->weight);
+	float weight = 1.f;
+	getfloatfield(L,  index, "weight",          weight);
+	// Weight was used as "sqdist/weight" before, now it is used
+	// in a  "sqrt(sqdist)*weight_mult" form instead.
+	b->weight_mult = weight > 0. ? 1. / (weight * weight) : 1.f;
+	getfloatfield(L,  index, "centrality_point", b->centrality_point);
+	getfloatfield(L,  index, "centrality_weight", b->centrality_weight);
+	getfloatfield(L,  index, "z_point",         b->z_point);
+	getfloatfield(L,  index, "z_weight",        b->z_weight);
 
 	b->min_pos = getv3s16field_default(L, index, "min_pos", b->min_pos);
 	getintfield(L, index, "y_min", b->min_pos.Y);
