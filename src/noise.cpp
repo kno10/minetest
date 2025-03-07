@@ -347,7 +347,7 @@ float NoisePerlin3D(const NoiseParams *np, float x, float y, float z, s32 seed)
 
 	for (size_t i = 0; i < np->octaves; i++) {
 		float noiseval = noise3d_gradient(x * f, y * f, z * f, seed + i,
-			np->flags & NOISE_FLAG_EASED);
+			np->flags & & (NOISE_FLAG_DEFAULTS | NOISE_FLAG_EASED));
 
 		if (np->flags & NOISE_FLAG_ABSVALUE)
 			noiseval = std::fabs(noiseval);
